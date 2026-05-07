@@ -1,0 +1,235 @@
+import 'package:flutter/material.dart';
+import 'package:collection/collection.dart'; // Digunakan untuk PriorityQueue
+import 'dart:collection';
+void main() {
+runApp(const UhamkaRouteApp());
+}
+class UhamkaRouteApp extends StatelessWidget {
+const UhamkaRouteApp({super.key});
+@override
+Widget build(BuildContext context) {
+return MaterialApp(
+title: 'UHAMKA AI Route',
+debugShowCheckedModeBanner: false,
+theme: ThemeData(
+colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue.shade900),
+useMaterial3: true,
+),
+home: const HomeScreen(),
+);
+}
+}
+class HomeScreen extends StatefulWidget {
+const HomeScreen({super.key});
+@override
+State<HomeScreen> createState() => _HomeScreenState();
+}
+class _HomeScreenState extends State<HomeScreen> {
+bool isKantinMacet = false;
+// Data Heuristic (Jarak estimasi ke Ruang Dosen)
+final Map<String, int> heuristic = {
+"Gerbang": 8,
+"Lobby": 6,
+"Lab AI": 4,
+"Perpustakaan": 3,
+"Kantin": 2,
+"Parkiran": 5,
+"Ruang Dosen": 0
+};
+// Fungsi untuk membangun graph secara dinamis (berubah jika macet)
+Map<String, List<MapEntry<String, int>>> getGraph() {
+int extraCost = isKantinMacet ? 3 : 0;
+return {
+"Gerbang": [const MapEntry("Lobby", 3), const MapEntry("Parkiran", 5)],
+"Lobby": [const MapEntry("Lab AI", 2), const MapEntry("Perpustakaan", 4)],
+"Lab AI": [const MapEntry("Ruang Dosen", 4)],
+"Perpustakaan": [MapEntry("Kantin", 3 + extraCost)],
+"Kantin": [const MapEntry("Ruang Dosen", 2)],
+"Parkiran": [MapEntry("Kantin", 4 + extraCost)],
+"Ruang Dosen": []
+};
+}
+// --- IMPLEMENTASI ALGORITMA ---
+// 1. Breadth-First Search (BFS)
+Map<String, dynamic> solveBFS() {
+var graph = getGraph();
+Queue<List<String>> queue = Queue()..add(["Gerbang"]);
+Set<String> visited = {"Gerbang"};
+while (queue.isNotEmpty) {
+var path = queue.removeFirst();
+var node = path.last;
+if (node == "Ruang Dosen") return {"path": path, "cost": _calcCost(path, graph)};
+for (var edge in graph[node]!) {
+if (!visited.contains(edge.key)) {
+visited.add(edge.key);
+queue.add([...path, edge.key]);
+}
+}
+}
+return {"path": [], "cost": 0};
+}
+// 2. Uniform Cost Search (UCS)
+Map<String, dynamic> solveUCS() {
+var graph = getGraph();
+var pq = PriorityQueue<List<dynamic>>((a, b) => a[1].compareTo(b[1]));
+pq.add([["Gerbang"], 0]);
+Set<String> visited = {};
+while (pq.isNotEmpty) {
+var current = pq.removeFirst();
+List<String> path = List<String>.from(current[0]);
+int cost = current[1];
+String node = path.last;
+if (node == "Ruang Dosen") return {"path": path, "cost": cost};
+if (visited.contains(node)) continue;
+visited.add(node);
+for (var edge in graph[node]!) {
+pq.add([[...path, edge.key], cost + edge.value]);
+}
+}
+return {"path": [], "cost": 0};
+}
+// 3. Greedy Best-First Search
+Map<String, dynamic> solveGreedy() {
+var graph = getGraph();
+var path = ["Gerbang"];
+while (path.last != "Ruang Dosen") {
+var neighbors = graph[path.last]!;
+if (neighbors.isEmpty) break;
+// Urutkan berdasarkan heuristic saja
+neighbors.sort((a, b) => (heuristic[a.key] ?? 99).compareTo(heuristic[b.key] ?? 99));
+path.add(neighbors.first.key);
+}
+return {"path": path, "cost": _calcCost(path, graph)};
+}
+// 4. A* Search
+Map<String, dynamic> solveAStar() {
+var graph = getGraph();
+var pq = PriorityQueue<List<dynamic>>((a, b) => a[2].compareTo(b[2]));
+pq.add([["Gerbang"], 0, heuristic["Gerbang"]]);
+Map<String, int> minCost = {"Gerbang": 0};
+while (pq.isNotEmpty) {
+var current = pq.removeFirst();
+List<String> path = List<String>.from(current[0]);
+int g = current[1];
+String node = path.last;
+if (node == "Ruang Dosen") return {"path": path, "cost": g};
+for (var edge in graph[node]!) {
+int newG = g + edge.value;
+if (!minCost.containsKey(edge.key) || newG < minCost[edge.key]!) {
+minCost[edge.key] = newG;
+int f = newG + (heuristic[edge.key] ?? 0);
+pq.add([[...path, edge.key], newG, f]);
+}
+}
+}
+return {"path": [], "cost": 0};
+}
+int _calcCost(List<String> path, Map<String, List<MapEntry<String, int>>> graph) {
+int total = 0;
+for (int i = 0; i < path.length - 1; i++) {
+total += graph[path[i]]!.firstWhere((e) => e.key == path[i+1]).value;
+}
+return total;
+}
+@override
+Widget build(BuildContext context) {
+final results = [
+{"alg": "BFS", "data": solveBFS()},
+{"alg": "UCS", "data": solveUCS()},
+{"alg": "Greedy", "data": solveGreedy()},
+{"alg": "A*", "data": solveAStar()},
+];
+return Scaffold(
+appBar: AppBar(
+title: const Text("UHAMKA Route AI Finder"),
+backgroundColor: Colors.blue.shade900,
+foregroundColor: Colors.white,
+),
+body: ListView(
+padding: const EdgeInsets.all(16),
+children: [
+_buildConditionCard(),
+const SizedBox(height: 20),
+const Text("Hasil Perbandingan Jalur:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+const SizedBox(height: 10),
+_buildResultTable(results),
+const SizedBox(height: 25),
+_buildConclusion(),
+],
+),
+);
+}
+Widget _buildConditionCard() {
+return Card(
+elevation: 4,
+child: Padding(
+padding: const EdgeInsets.all(8.0),
+child: Column(
+children: [
+const ListTile(
+leading: Icon(Icons.map_outlined),
+title: Text("Simulasi Kondisi Kampus"),
+subtitle: Text("Ubah variabel lingkungan untuk melihat perubahan rute."),
+),
+SwitchListTile(
+title: const Text("Kantin Macet (Cost +3)"),
+value: isKantinMacet,
+onChanged: (val) => setState(() => isKantinMacet = val),
+secondary: Icon(Icons.warning, color: isKantinMacet ? Colors.red : Colors.grey),
+),
+],
+),
+),
+);
+}
+Widget _buildResultTable(List<Map<String, dynamic>> results) {
+return SingleChildScrollView(
+scrollDirection: Axis.horizontal,
+child: DataTable(
+headingRowColor: MaterialStateProperty.all(Colors.blue.shade100),
+columns: const [
+DataColumn(label: Text("Algoritma")),
+DataColumn(label: Text("Jalur (Path)")),
+DataColumn(label: Text("Cost")),
+],
+rows: results.map((r) => DataRow(cells: [
+DataCell(Text(r['alg'], style: const TextStyle(fontWeight: FontWeight.bold))),
+DataCell(Text((r['data']['path'] as List).join(" → "))),
+DataCell(Text(r['data']['cost'].toString())),
+])).toList(),
+),
+);
+}
+Widget _buildConclusion() {
+return Container(
+padding: const EdgeInsets.all(16),
+decoration: BoxDecoration(
+color: Colors.blue.shade50,
+borderRadius: BorderRadius.circular(12),
+border: Border.all(color: Colors.blue.shade200),
+),
+child: Column(
+crossAxisAlignment: CrossAxisAlignment.start,
+children: [
+Row(
+children: [
+Icon(Icons.stars, color: Colors.blue.shade900),
+const SizedBox(width: 8),
+const Text("Kesimpulan Analisis", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+],
+),
+const Divider(),
+const Text(
+"Algoritma terbaik adalah **A*** karena ia menggabungkan biaya aktual (UCS) dan informasi heuristic (Greedy).",
+style: TextStyle(fontWeight: FontWeight.w600),
+),
+const SizedBox(height: 8),
+const Text("• BFS: Hanya mencari jalur terpendek dalam hal jumlah gedung.\n"
+"• UCS: Mencari rute biaya terendah tapi memeriksa terlalu banyak arah.\n"
+"• Greedy: Sangat cepat tapi seringkali tidak akurat karena mengabaikan biaya jalan.\n"
+"• A*: Paling cerdas, efisien, dan selalu menemukan rute terpendek secara biaya."),
+],
+),
+);
+}
+}
